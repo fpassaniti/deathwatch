@@ -1,41 +1,35 @@
-import { createSupabaseServerClient } from '@supabase/auth-helpers-sveltekit';
-import { redirect } from '@sveltejs/kit';
-import { SUPABASE_SERVICE_KEY } from '$env/static/private';
-import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { createServerClient } from '@supabase/ssr'
+import { redirect } from '@sveltejs/kit'
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public'
 
 export async function handle({ event, resolve }) {
-  event.locals.supabase = createSupabaseServerClient({
-    supabaseUrl: PUBLIC_SUPABASE_URL,
-    supabaseKey: SUPABASE_SERVICE_KEY,
-    event,
-  });
+  event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+    cookies: {
+      get: (key) => event.cookies.get(key),
+      set: (key, value, options) => {
+        event.cookies.set(key, value, options)
+      },
+      remove: (key, options) => {
+        event.cookies.delete(key, options)
+      },
+    },
+  })
 
-  // Get session from request
-  event.locals.session = await event.locals.supabase.auth.getSession();
-
-  // Protected routes
-  const protectedRoutes = ['/persons', '/persons/add', '/deaths', '/account'];
-  const isProtectedRoute = protectedRoutes.some(route => 
-    event.url.pathname.startsWith(route)
-  );
-  
-  // Auth routes that should redirect logged-in users away
-  const authRoutes = ['/auth/login', '/auth/register'];
-  const isAuthRoute = authRoutes.some(route => 
-    event.url.pathname.startsWith(route)
-  );
-
-  if (isProtectedRoute && !event.locals.session.data.session) {
-    throw redirect(303, '/auth/login');
-  }
-
-  if (isAuthRoute && event.locals.session.data.session) {
-    throw redirect(303, '/persons');
+  /**
+   * a little helper that is written for convenience so that instead
+   * of calling `const { data: { session } } = await supabase.auth.getSession()`
+   * you just call this `await getSession()`
+   */
+  event.locals.getSession = async () => {
+    const {
+      data: { session },
+    } = await event.locals.supabase.auth.getSession()
+    return session
   }
 
   return resolve(event, {
     filterSerializedResponseHeaders(name) {
-      return name === 'content-range';
+      return name === 'content-range'
     },
-  });
+  })
 }
